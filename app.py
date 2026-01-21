@@ -198,10 +198,11 @@ if question:
     context = "\n".join(results["documents"][0])
     response = llm.invoke(context + "\n\nQuestion: " + question)
 
-    st.markdown(response)
+    st.markdown(response.content)
 
 # ------------------------------------------------
 # RAW DATA
 # ------------------------------------------------
 with st.expander("📁 View Raw Data"):
     st.dataframe(df, use_container_width=True)
+
