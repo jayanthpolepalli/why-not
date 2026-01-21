@@ -9,3 +9,4 @@ scikit-learn
 faker
 plotly
 chromadb
+langchain_groq
