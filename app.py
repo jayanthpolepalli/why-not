@@ -10,7 +10,6 @@ from sklearn.pipeline import Pipeline
 
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_groq import ChatGroq
-os.environ["GROQ_API_KEY"] = st.secrets["GROQ_API_KEY"]
 if "GROQ_API_KEY" not in st.secrets:
     st.error("GROQ_API_KEY is not set in Streamlit Secrets")
     st.stop()
@@ -212,5 +211,6 @@ if question:
 # ------------------------------------------------
 with st.expander("📁 View Raw Data"):
     st.dataframe(df)
+
 
 
