@@ -8,37 +8,44 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.pipeline import Pipeline
 
-from langchain_community.embeddings import HuggingFaceEmbeddings
+from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_groq import ChatGroq
-if "GROQ_API_KEY" not in st.secrets:
-    st.error("GROQ_API_KEY is not set in Streamlit Secrets")
-    st.stop()
+
 # ------------------------------------------------
-# CHROMA-COMPATIBLE HUGGINGFACE EMBEDDING WRAPPER
+# API KEY CHECK
+# ------------------------------------------------
+if "GROQ_API_KEY" not in st.secrets:
+    st.error("❌ GROQ_API_KEY is missing in Streamlit Secrets")
+    st.stop()
+
+# ------------------------------------------------
+# CHROMA EMBEDDING WRAPPER (SAFE)
 # ------------------------------------------------
 class ChromaHuggingFaceEmbedding:
-    def __init__(self, model="sentence-transformers/all-MiniLM-L6-v2"):
-        self.model = model
-        self.embedder = HuggingFaceEmbeddings(model_name=model)
+    def __init__(self, model_name="sentence-transformers/all-MiniLM-L6-v2"):
+        self.model_name = model_name
+        self.embedder = HuggingFaceEmbeddings(model_name=model_name)
 
-    def __call__(self, input):
-        # Chroma expects: List[str] -> List[List[float]]
-        return self.embedder.embed_documents(input)
+    def __call__(self, texts):
+        return self.embedder.embed_documents(texts)
 
     def name(self):
-        return f"huggingface-{self.model}"
+        return f"huggingface-{self.model_name}"
 
 # ------------------------------------------------
-# CONFIG
+# STREAMLIT CONFIG
 # ------------------------------------------------
-st.set_page_config("AI Review & Data Analyst", layout="wide")
+st.set_page_config(
+    page_title="AI Review & Data Analyst",
+    layout="wide"
+)
 
-st.title("🧠 AI Review & Data Analyst (Flexible + Cloud)")
+st.title("🧠 AI Review & Data Analyst (RAG + Fraud Detection)")
 
 # ------------------------------------------------
 # FILE UPLOAD
 # ------------------------------------------------
-uploaded = st.sidebar.file_uploader("Upload ANY CSV file", type=["csv"])
+uploaded = st.sidebar.file_uploader("📂 Upload CSV", type=["csv"])
 
 if not uploaded:
     st.info("⬅️ Upload a CSV file to begin")
@@ -47,16 +54,12 @@ if not uploaded:
 df = pd.read_csv(uploaded)
 
 # ------------------------------------------------
-# API KEY INPUT
-
-
-
-
-# Initialize LLM after API key is set
+# LLM INIT
+# ------------------------------------------------
 llm = ChatGroq(
     model_name="llama-3.3-70b-versatile",
-    groq_api_key=st.secrets["GROQ_API_KEY"],
-    )
+    groq_api_key=st.secrets["GROQ_API_KEY"]
+)
 
 # ------------------------------------------------
 # COLUMN AUTO-DETECTION
@@ -78,26 +81,27 @@ date_col    = auto_detect_column(["date", "time", "created"])
 # ------------------------------------------------
 st.sidebar.markdown("### 🔧 Column Mapping")
 
-product_col = st.sidebar.selectbox("Product", [None] + list(df.columns),
-    index=(list(df.columns).index(product_col) + 1) if product_col in df.columns else 0)
+def col_selector(label, detected):
+    return st.sidebar.selectbox(
+        label,
+        [None] + list(df.columns),
+        index=(list(df.columns).index(detected) + 1)
+        if detected in df.columns else 0
+    )
 
-review_col = st.sidebar.selectbox("Review", [None] + list(df.columns),
-    index=(list(df.columns).index(review_col) + 1) if review_col in df.columns else 0)
-
-rating_col = st.sidebar.selectbox("Rating", [None] + list(df.columns),
-    index=(list(df.columns).index(rating_col) + 1) if rating_col in df.columns else 0)
-
-date_col = st.sidebar.selectbox("Date", [None] + list(df.columns),
-    index=(list(df.columns).index(date_col) + 1) if date_col in df.columns else 0)
+product_col = col_selector("Product", product_col)
+review_col  = col_selector("Review", review_col)
+rating_col  = col_selector("Rating", rating_col)
+date_col    = col_selector("Date", date_col)
 
 # ------------------------------------------------
-# DATE CONVERSION
+# DATE PARSING
 # ------------------------------------------------
 if date_col:
     df[date_col] = pd.to_datetime(df[date_col], errors="coerce")
 
 # ------------------------------------------------
-# FAKE REVIEW DETECTION
+# FAKE REVIEW DETECTION (WEAK SUPERVISION)
 # ------------------------------------------------
 if review_col and "is_suspicious" not in df.columns:
     model = Pipeline([
@@ -105,13 +109,13 @@ if review_col and "is_suspicious" not in df.columns:
         ("clf", RandomForestClassifier(n_estimators=100, random_state=42))
     ])
 
-    weak_label = (
+    weak_labels = (
         df[review_col].astype(str)
         .str.lower()
         .str.count(r"\b(best|excellent|awesome|fake|scam|worst)\b") > 2
     )
 
-    model.fit(df[review_col].astype(str), weak_label.astype(int))
+    model.fit(df[review_col].astype(str), weak_labels.astype(int))
     df["is_suspicious"] = model.predict(df[review_col].astype(str))
 
 # ------------------------------------------------
@@ -130,7 +134,7 @@ gauge = go.Figure(go.Indicator(
     gauge={"axis": {"range": [0, 100]}}
 ))
 
-c1.plotly_chart(gauge, width="stretch")
+c1.plotly_chart(gauge, use_container_width=True)
 c2.metric("Total Records", total)
 c3.metric("Suspicious Records", suspicious)
 
@@ -147,10 +151,10 @@ if product_col and "is_suspicious" in df.columns:
     )
 
     summary["risk_%"] = (summary["sum"] / summary["count"] * 100).round(1)
-    st.dataframe(summary, width="stretch")
+    st.dataframe(summary, use_container_width=True)
 
 # ------------------------------------------------
-# BUILD RAG INDEX (100% SAFE)
+# BUILD RAG INDEX
 # ------------------------------------------------
 text_cols = df.select_dtypes(include="object").columns.tolist()
 
@@ -163,8 +167,7 @@ embedding_fn = ChromaHuggingFaceEmbedding()
 if "rag_collection" not in st.session_state:
     with st.spinner("📚 Building vector index..."):
         try:
-            collection = client.get_collection(name=collection_name)
-
+            collection = client.get_collection(collection_name)
         except Exception:
             collection = client.create_collection(
                 name=collection_name,
@@ -172,14 +175,11 @@ if "rag_collection" not in st.session_state:
             )
 
             docs, meta = [], []
-            for idx, row in df.iterrows():
+            for i, row in df.iterrows():
                 docs.append(" | ".join(
                     f"{c}: {row[c]}" for c in text_cols if pd.notna(row[c])
                 ))
-                if product_col and pd.notna(row[product_col]):
-                    meta.append({product_col: str(row[product_col])})
-                else:
-                    meta.append({"row_index": str(idx)})
+                meta.append({product_col: str(row[product_col])} if product_col else {"row": i})
 
             collection.add(
                 documents=docs,
@@ -203,14 +203,18 @@ if question:
     )
 
     context = "\n".join(results["documents"][0])
-    answer = llm.invoke(context + "\n\n" + question)
-    st.markdown(answer)
+    response = llm.invoke(context + "\n\nQuestion: " + question)
+
+    st.markdown(response)
 
 # ------------------------------------------------
 # RAW DATA
 # ------------------------------------------------
 with st.expander("📁 View Raw Data"):
-    st.dataframe(df)
+    st.dataframe(df, use_container_width=True)
+
+
+
 
 
 
