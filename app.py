@@ -8,7 +8,7 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.pipeline import Pipeline
 
-from langchain_huggingface import HuggingFaceEmbeddings
+from chromadb.utils import embedding_functions
 from langchain_groq import ChatGroq
 
 # ------------------------------------------------
@@ -17,20 +17,6 @@ from langchain_groq import ChatGroq
 if "GROQ_API_KEY" not in st.secrets:
     st.error("❌ GROQ_API_KEY is missing in Streamlit Secrets")
     st.stop()
-
-# ------------------------------------------------
-# CHROMA EMBEDDING WRAPPER (SAFE)
-# ------------------------------------------------
-class ChromaHuggingFaceEmbedding:
-    def __init__(self, model_name="sentence-transformers/all-MiniLM-L6-v2"):
-        self.model_name = model_name
-        self.embedder = HuggingFaceEmbeddings(model_name=model_name)
-
-    def __call__(self, texts):
-        return self.embedder.embed_documents(texts)
-
-    def name(self):
-        return f"huggingface-{self.model_name}"
 
 # ------------------------------------------------
 # STREAMLIT CONFIG
@@ -154,7 +140,7 @@ if product_col and "is_suspicious" in df.columns:
     st.dataframe(summary, use_container_width=True)
 
 # ------------------------------------------------
-# BUILD RAG INDEX
+# BUILD RAG INDEX (CHROMA SAFE)
 # ------------------------------------------------
 text_cols = df.select_dtypes(include="object").columns.tolist()
 
@@ -162,7 +148,10 @@ dataset_hash = hashlib.md5(uploaded.getvalue()).hexdigest()[:8]
 collection_name = f"dataset_rag_{dataset_hash}"
 
 client = chromadb.Client()
-embedding_fn = ChromaHuggingFaceEmbedding()
+
+embedding_fn = embedding_functions.SentenceTransformerEmbeddingFunction(
+    model_name="all-MiniLM-L6-v2"
+)
 
 if "rag_collection" not in st.session_state:
     with st.spinner("📚 Building vector index..."):
@@ -179,7 +168,11 @@ if "rag_collection" not in st.session_state:
                 docs.append(" | ".join(
                     f"{c}: {row[c]}" for c in text_cols if pd.notna(row[c])
                 ))
-                meta.append({product_col: str(row[product_col])} if product_col else {"row": i})
+                meta.append(
+                    {product_col: str(row[product_col])}
+                    if product_col and pd.notna(row[product_col])
+                    else {"row": str(i)}
+                )
 
             collection.add(
                 documents=docs,
@@ -212,9 +205,3 @@ if question:
 # ------------------------------------------------
 with st.expander("📁 View Raw Data"):
     st.dataframe(df, use_container_width=True)
-
-
-
-
-
-
