@@ -55,8 +55,9 @@ df = pd.read_csv(uploaded)
 
 # Initialize LLM after API key is set
 llm = ChatGroq(
-    groq_api_key=st.secrets["GROQ_API_KEY"],groq_api_key=st.secrets["GROQ_API_KEY"]
-)
+    model_name="llama-3.3-70b-versatile",
+    groq_api_key=st.secrets["GROQ_API_KEY"],
+    )
 
 # ------------------------------------------------
 # COLUMN AUTO-DETECTION
@@ -211,4 +212,5 @@ if question:
 # ------------------------------------------------
 with st.expander("📁 View Raw Data"):
     st.dataframe(df)
+
 
