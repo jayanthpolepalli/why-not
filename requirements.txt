@@ -8,3 +8,4 @@ flask
 scikit-learn
 faker
 plotly
+chromadb
