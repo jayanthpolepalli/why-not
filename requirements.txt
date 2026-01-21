@@ -7,3 +7,4 @@ groq
 flask
 scikit-learn
 faker
+plotly
