@@ -10,3 +10,4 @@ faker
 plotly
 chromadb
 langchain_groq
+langchain_huggingface
