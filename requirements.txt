@@ -1,0 +1,9 @@
+langchain
+streamlit
+pandas
+langchain_community
+openai
+groq
+flask
+scikit-learn
+faker
